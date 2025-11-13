@@ -649,23 +649,34 @@ static int read_one_pstree_item(struct cr_img *img, pid_t *pid_max)
 		root_item = pi;
 		pi->parent = NULL;
 	} else {
-		struct pid *pid;
-		struct pstree_item *parent;
+               struct pid *pid;
+               struct pstree_item *parent = NULL;
 
-		pid = pstree_pid_by_virt(e->ppid, parent_ns_id);
-		if (!pid && parent_ns_id != ns_id)
-			pid = pstree_pid_by_virt(e->ppid, ns_id);
-		if (!pid)
-			pid = pstree_pid_by_virt(e->ppid, 0);
-		if (!pid || pid->state == TASK_UNDEF || pid->state == TASK_THREAD) {
-			pr_err("Can't find a parent for %d\n", vpid(pi));
-			goto err_ids;
-		}
+               pid = pstree_pid_by_virt(e->ppid, parent_ns_id);
+               if (!pid && parent_ns_id != ns_id)
+                       pid = pstree_pid_by_virt(e->ppid, ns_id);
+               if (!pid && parent_ns_id) {
+                       parent = lookup_create_item(e->ppid, parent_ns_id);
+                       if (parent)
+                               pid = parent->pid;
+               }
+               if (!pid && parent_ns_id != ns_id) {
+                       parent = lookup_create_item(e->ppid, ns_id);
+                       if (parent)
+                               pid = parent->pid;
+               }
+               if (!pid)
+                       pid = pstree_pid_by_virt(e->ppid, 0);
+               if (!pid || pid->state == TASK_THREAD) {
+                       pr_err("Can't find a parent for %d\n", vpid(pi));
+                       goto err_ids;
+               }
 
-		parent = pid->item;
-		pi->parent = parent;
-		list_add(&pi->sibling, &parent->children);
-	}
+               if (!parent)
+                       parent = pid->item;
+               pi->parent = parent;
+               list_add(&pi->sibling, &parent->children);
+       }
 
 	pi->nr_threads = e->n_threads;
 	pi->threads = xmalloc(e->n_threads * sizeof(struct pid));
