@@ -592,6 +592,7 @@ static int read_one_pstree_item(struct cr_img *img, pid_t *pid_max)
 	PstreeEntry *e;
 	TaskKobjIdsEntry *ids = NULL;
 	unsigned int ns_id = 0;
+	unsigned int parent_ns_id = 0;
 	int ret, ids_ret, i;
 
 	ret = pb_read_one_eof(img, &e, PB_PSTREE);
@@ -605,6 +606,10 @@ static int read_one_pstree_item(struct cr_img *img, pid_t *pid_max)
 
 	if (ids && ids->has_pid_ns_id)
 		ns_id = ids->pid_ns_id;
+
+	parent_ns_id = ns_id;
+	if (ids && ids->has_parent_pid_ns_id)
+		parent_ns_id = ids->parent_pid_ns_id;
 
 	pi = lookup_create_item(e->pid, ns_id);
 	if (pi == NULL)
@@ -647,7 +652,11 @@ static int read_one_pstree_item(struct cr_img *img, pid_t *pid_max)
 		struct pid *pid;
 		struct pstree_item *parent;
 
-		pid = pstree_pid_by_virt(e->ppid, ns_id);
+		pid = pstree_pid_by_virt(e->ppid, parent_ns_id);
+		if (!pid && parent_ns_id != ns_id)
+			pid = pstree_pid_by_virt(e->ppid, ns_id);
+		if (!pid)
+			pid = pstree_pid_by_virt(e->ppid, 0);
 		if (!pid || pid->state == TASK_UNDEF || pid->state == TASK_THREAD) {
 			pr_err("Can't find a parent for %d\n", vpid(pi));
 			goto err_ids;

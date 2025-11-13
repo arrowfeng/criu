@@ -701,6 +701,19 @@ int dump_task_ns_ids(struct pstree_item *item)
 		return -1;
 	}
 
+	ids->has_parent_pid_ns_id = false;
+	if (item->parent) {
+		TaskKobjIdsEntry *parent_ids = item->parent->ids;
+
+		if (parent_ids && parent_ids->has_pid_ns_id) {
+			ids->has_parent_pid_ns_id = true;
+			ids->parent_pid_ns_id = parent_ids->pid_ns_id;
+		} else if (item->parent->pid->ns_id) {
+			ids->has_parent_pid_ns_id = true;
+			ids->parent_pid_ns_id = item->parent->pid->ns_id;
+		}
+	}
+
 	ids->has_net_ns_id = true;
 	ids->net_ns_id = __get_ns_id(pid, &net_ns_desc, NULL, &dmpi(item)->netns);
 	if (!ids->net_ns_id) {
