@@ -1050,8 +1050,10 @@ int dump_user_ns(pid_t pid, int ns_id)
 		goto err;
 	entry.n_gid_map = ret;
 
-	if (check_user_ns(pid, &entry))
-		goto err;
+	if (root_item->ids && ns_id == root_item->ids->user_ns_id) {
+		if (check_user_ns(pid, &entry))
+			goto err;
+	}
 
 	img = open_image(CR_FD_USERNS, O_DUMP, ns_id);
 	if (!img)
