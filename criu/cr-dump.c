@@ -1693,6 +1693,32 @@ static int dump_one_task(struct pstree_item *item, InventoryEntry *parent_ie)
 	item->sid = misc.sid;
 	item->pgid = misc.pgid;
 
+	if (!item->sid && pps_buf.sid > 0) {
+		int virt_sid = pid_to_virt(pps_buf.sid);
+
+		if (virt_sid == 0) {
+			pr_err("Can't translate session leader %d for %d(%d)\n", pps_buf.sid, item->pid->real,
+			       vpid(item));
+			goto err_cure;
+		}
+
+		pr_info("Map host sid %d to %d for pid %d\n", pps_buf.sid, virt_sid, vpid(item));
+		item->sid = virt_sid;
+	}
+
+	if (!item->pgid && pps_buf.pgid > 0) {
+		int virt_pgid = pid_to_virt(pps_buf.pgid);
+
+		if (virt_pgid == 0) {
+			pr_err("Can't translate process group %d for %d(%d)\n", pps_buf.pgid, item->pid->real,
+			       vpid(item));
+			goto err_cure;
+		}
+
+		pr_info("Map host pgid %d to %d for pid %d\n", pps_buf.pgid, virt_pgid, vpid(item));
+		item->pgid = virt_pgid;
+	}
+
 	pr_info("sid=%d pgid=%d pid=%d\n", item->sid, item->pgid, vpid(item));
 
 	if (item->sid == 0) {
