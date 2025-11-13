@@ -929,33 +929,36 @@ static int prepare_pstree_kobj_ids(void)
 				return ret;
 		}
 
-		rsti(item)->clone_flags = cflags;
-		if (parent)
-			/*
-			 * Mount namespaces are setns()-ed at
-			 * restore_task_mnt_ns() explicitly,
-			 * no need in creating it with its own
-			 * temporary namespace.
-			 *
-			 * Root task is exceptional -- it will
-			 * be born in a fresh new mount namespace
-			 * which will be populated with all other
-			 * namespaces' entries.
-			 */
-			rsti(item)->clone_flags &= ~CLONE_NEWNS;
+                rsti(item)->clone_flags = cflags;
+                if (parent)
+                        /*
+                         * Mount namespaces are setns()-ed at
+                         * restore_task_mnt_ns() explicitly,
+                         * no need in creating it with its own
+                         * temporary namespace.
+                         *
+                         * Root task is exceptional -- it will
+                         * be born in a fresh new mount namespace
+                         * which will be populated with all other
+                         * namespaces' entries.
+                         */
+                        rsti(item)->clone_flags &= ~CLONE_NEWNS;
 
-		/**
-		 * Only child reaper can clone with CLONE_NEWPID
-		 */
-		if (vpid(item) != INIT_PID)
-			rsti(item)->clone_flags &= ~CLONE_NEWPID;
+                if (cflags & CLONE_NEWPID) {
+                        if (vpid(item) != INIT_PID) {
+                                pr_err("Task %d must become pid namespace init (pid 1)\n", vpid(item));
+                                return -1;
+                        }
+                } else {
+                        rsti(item)->clone_flags &= ~CLONE_NEWPID;
+                }
 
-		cflags &= CLONE_ALLNS;
+                cflags &= CLONE_ALLNS;
 
-		if (item == root_item) {
-			pr_info("Will restore in %lx namespaces\n", cflags);
-			root_ns_mask = cflags;
-		} else if (cflags & ~(root_ns_mask & CLONE_SUBNS)) {
+                if (item == root_item) {
+                        pr_info("Will restore in %lx namespaces\n", cflags);
+                        root_ns_mask = cflags;
+                } else if (cflags & ~(root_ns_mask & CLONE_SUBNS)) {
 			/*
 			 * Namespaces from CLONE_SUBNS can be nested, but in
 			 * this case nobody can't share external namespaces of
