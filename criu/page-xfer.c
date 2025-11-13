@@ -1137,13 +1137,19 @@ static int page_server_add(int sk, struct page_server_iov *pi, u32 flags)
 
 static int page_server_get_pages(int sk, struct page_server_iov *pi)
 {
-	struct pstree_item *item;
-	struct page_pipe *pp;
-	unsigned long len, nr_pages;
-	int ret;
+        struct pstree_item *item;
+        struct page_pipe *pp;
+        unsigned long len, nr_pages, id;
+        int ret, type;
 
-	item = pstree_item_by_virt(pi->dst_id);
-	pp = dmpi(item)->mem_pp;
+        type = decode_pm(pi->dst_id, &id);
+        if (type != CR_FD_PAGEMAP) {
+                pr_err("Unexpected pagemap type %d for GET command\n", type);
+                return -1;
+        }
+
+        item = pstree_item_by_virt(id, 0);
+        pp = dmpi(item)->mem_pp;
 
 	/* page_pipe_read() uses 'unsigned long *' but pi->nr_pages is u64.
 	 * Use a temporary variable to fix the incompatible pointer type

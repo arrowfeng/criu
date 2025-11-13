@@ -188,7 +188,7 @@ int find_unused_fd_pid(pid_t pid)
 {
 	struct pstree_item *task;
 
-	task = pstree_item_by_virt(pid);
+        task = pstree_item_by_virt(pid, 0);
 	if (!task) {
 		pr_err("Invalid pid:%d\n", pid);
 		return -1;
@@ -201,7 +201,7 @@ int set_fds_event(pid_t virt)
 	struct pstree_item *item;
 	bool is_set;
 
-	item = pstree_item_by_virt(virt);
+        item = pstree_item_by_virt(virt, 0);
 	BUG_ON(!item);
 
 	is_set = !!test_and_set_bit_le(FDS_EVENT_BIT, &item->task_st_le_bits);
@@ -799,7 +799,7 @@ static struct fdinfo_list_entry *alloc_fle(int pid, FdinfoEntry *fe)
 	fle->received = 0;
 	fle->fake = 0;
 	fle->stage = FLE_INITIALIZED;
-	fle->task = pstree_item_by_virt(pid);
+        fle->task = pstree_item_by_virt(pid, 0);
 	if (!fle->task) {
 		pr_err("Can't find task with pid %d\n", pid);
 		shfree_last(fle);
