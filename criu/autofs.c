@@ -941,11 +941,11 @@ static int autofs_add_mount_info(struct pprep_head *ph)
 	struct pstree_item *master;
 	struct fdinfo_list_entry *ple;
 
-	if (entry->fd == -1)
-		/* Catatonic mounts have no owner. Keep them with init. */
-		master = pstree_item_by_virt(getpid());
-	else
-		master = pstree_item_by_virt(entry->pgrp);
+       if (entry->fd == -1)
+               /* Catatonic mounts have no owner. Keep them with init. */
+               master = pstree_item_by_virt(getpid(), 0);
+       else
+               master = pstree_item_by_virt(entry->pgrp, 0);
 	BUG_ON(!master);
 
 	ple = autofs_pipe_le(master, entry);

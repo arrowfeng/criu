@@ -899,6 +899,23 @@ int collect_pstree_ids(void)
 	return 0;
 }
 
+static void propagate_pid_ns_ids(void)
+{
+	struct pstree_item *item;
+	int i;
+
+	for_each_pstree_item(item) {
+		unsigned int ns_id = 0;
+
+		if (item->ids && item->ids->has_pid_ns_id)
+			ns_id = item->ids->pid_ns_id;
+
+		item->pid->ns_id = ns_id;
+		for (i = 0; i < item->nr_threads; i++)
+			item->threads[i].ns_id = ns_id;
+	}
+}
+
 static int collect_file_locks(void)
 {
 	return parse_file_locks();
@@ -988,6 +1005,7 @@ static int dump_task_thread(struct parasite_ctl *parasite_ctl, const struct pstr
 		pr_err("Can't dump thread for pid %d\n", pid);
 		goto err;
 	}
+	tid->ns_id = item->pid->ns_id;
 	pstree_insert_pid(tid);
 
 	core->thread_core->creds->lsm_profile = dmpi(item)->thread_lsms[id]->profile;
@@ -1675,6 +1693,32 @@ static int dump_one_task(struct pstree_item *item, InventoryEntry *parent_ie)
 	item->sid = misc.sid;
 	item->pgid = misc.pgid;
 
+	if (!item->sid && pps_buf.sid > 0) {
+		int virt_sid = pid_to_virt(pps_buf.sid);
+
+		if (virt_sid == 0) {
+			pr_err("Can't translate session leader %d for %d(%d)\n", pps_buf.sid, item->pid->real,
+			       vpid(item));
+			goto err_cure;
+		}
+
+		pr_info("Map host sid %d to %d for pid %d\n", pps_buf.sid, virt_sid, vpid(item));
+		item->sid = virt_sid;
+	}
+
+	if (!item->pgid && pps_buf.pgid > 0) {
+		int virt_pgid = pid_to_virt(pps_buf.pgid);
+
+		if (virt_pgid == 0) {
+			pr_err("Can't translate process group %d for %d(%d)\n", pps_buf.pgid, item->pid->real,
+			       vpid(item));
+			goto err_cure;
+		}
+
+		pr_info("Map host pgid %d to %d for pid %d\n", pps_buf.pgid, virt_pgid, vpid(item));
+		item->pgid = virt_pgid;
+	}
+
 	pr_info("sid=%d pgid=%d pid=%d\n", item->sid, item->pgid, vpid(item));
 
 	if (item->sid == 0) {
@@ -2215,10 +2259,11 @@ int cr_dump_tasks(pid_t pid)
 		goto err;
 
 	if (collect_pstree_ids())
-		goto err;
+                goto err;
+	propagate_pid_ns_ids();
 
 	if (network_lock())
-		goto err;
+                goto err;
 
 	if (rpc_query_external_files())
 		goto err;

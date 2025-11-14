@@ -2901,9 +2901,8 @@ int dump_net_ns(struct ns_id *ns)
 #endif
 		if (!ret)
 			ret = dump_netns_conf(ns, fds);
-	} else if (ns->type != NS_ROOT) {
-		pr_err("Unable to dump more than one netns if the --emptyns is set\n");
-		ret = -1;
+	} else {
+		pr_debug("Skipping net namespace %u contents due to --empty-ns\n", ns->id);
 	}
 	if (!ret)
 		ret = dump_nf_ct(fds, CR_FD_NETNF_CT);

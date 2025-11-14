@@ -23,6 +23,7 @@ struct pstree_item {
 	pid_t born_sid;
 
 	int nr_threads;	     /* number of threads */
+	int threads_cap;	     /* allocated thread slots */
 	struct pid *threads; /* array of threads */
 	CoreEntry **core;
 	TaskKobjIdsEntry *ids;
@@ -99,9 +100,9 @@ extern struct pstree_item *__alloc_pstree_item(bool rst);
 #define alloc_pstree_item() __alloc_pstree_item(false)
 extern int init_pstree_helper(struct pstree_item *ret);
 
-extern struct pstree_item *lookup_create_item(pid_t pid);
+extern struct pstree_item *lookup_create_item(pid_t pid, unsigned int ns_id);
 extern void pstree_insert_pid(struct pid *pid_node);
-extern struct pid *pstree_pid_by_virt(pid_t pid);
+extern struct pid *pstree_pid_by_virt(pid_t pid, unsigned int ns_id);
 
 extern struct pstree_item *root_item;
 extern bool has_children(struct pstree_item *item);
@@ -115,7 +116,7 @@ extern int prepare_dummy_pstree(void);
 extern int dump_pstree(struct pstree_item *root_item);
 
 struct pstree_item *pstree_item_by_real(pid_t virt);
-struct pstree_item *pstree_item_by_virt(pid_t virt);
+struct pstree_item *pstree_item_by_virt(pid_t virt, unsigned int ns_id);
 
 extern int pid_to_virt(pid_t pid);
 

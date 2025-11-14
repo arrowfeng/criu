@@ -701,6 +701,19 @@ int dump_task_ns_ids(struct pstree_item *item)
 		return -1;
 	}
 
+	ids->has_parent_pid_ns_id = false;
+	if (item->parent) {
+		TaskKobjIdsEntry *parent_ids = item->parent->ids;
+
+		if (parent_ids && parent_ids->has_pid_ns_id) {
+			ids->has_parent_pid_ns_id = true;
+			ids->parent_pid_ns_id = parent_ids->pid_ns_id;
+		} else if (item->parent->pid->ns_id) {
+			ids->has_parent_pid_ns_id = true;
+			ids->parent_pid_ns_id = item->parent->pid->ns_id;
+		}
+	}
+
 	ids->has_net_ns_id = true;
 	ids->net_ns_id = __get_ns_id(pid, &net_ns_desc, NULL, &dmpi(item)->netns);
 	if (!ids->net_ns_id) {
@@ -764,15 +777,12 @@ int dump_task_ns_ids(struct pstree_item *item)
 	return 0;
 }
 
-static UsernsEntry userns_entry = USERNS_ENTRY__INIT;
+static UsernsEntry root_userns_entry = USERNS_ENTRY__INIT;
 #define INVALID_ID (~0U)
 
-static unsigned int userns_id(unsigned int id, UidGidExtent **map, int n)
+static unsigned int userns_map_id(unsigned int id, UidGidExtent **map, int n)
 {
 	int i;
-
-	if (!(root_ns_mask & CLONE_NEWUSER))
-		return id;
 
 	for (i = 0; i < n; i++) {
 		if (map[i]->lower_first <= id && map[i]->lower_first + map[i]->count > id)
@@ -782,12 +792,9 @@ static unsigned int userns_id(unsigned int id, UidGidExtent **map, int n)
 	return INVALID_ID;
 }
 
-static unsigned int host_id(unsigned int id, UidGidExtent **map, int n)
+static unsigned int host_map_id(unsigned int id, UidGidExtent **map, int n)
 {
 	int i;
-
-	if (!(root_ns_mask & CLONE_NEWUSER))
-		return id;
 
 	for (i = 0; i < n; i++) {
 		if (map[i]->first <= id && map[i]->first + map[i]->count > id)
@@ -797,28 +804,54 @@ static unsigned int host_id(unsigned int id, UidGidExtent **map, int n)
 	return INVALID_ID;
 }
 
-static uid_t host_uid(uid_t uid)
-{
-	UsernsEntry *e = &userns_entry;
-	return host_id(uid, e->uid_map, e->n_uid_map);
-}
-
-static gid_t host_gid(gid_t gid)
-{
-	UsernsEntry *e = &userns_entry;
-	return host_id(gid, e->gid_map, e->n_gid_map);
-}
-
 uid_t userns_uid(uid_t uid)
 {
-	UsernsEntry *e = &userns_entry;
-	return userns_id(uid, e->uid_map, e->n_uid_map);
+	UsernsEntry *e = &root_userns_entry;
+
+	if (!(root_ns_mask & CLONE_NEWUSER))
+		return uid;
+
+	return userns_map_id(uid, e->uid_map, e->n_uid_map);
 }
 
 gid_t userns_gid(gid_t gid)
 {
-	UsernsEntry *e = &userns_entry;
-	return userns_id(gid, e->gid_map, e->n_gid_map);
+	UsernsEntry *e = &root_userns_entry;
+
+	if (!(root_ns_mask & CLONE_NEWUSER))
+		return gid;
+
+	return userns_map_id(gid, e->gid_map, e->n_gid_map);
+}
+
+static uid_t host_uid_entry(UsernsEntry *e, uid_t uid)
+{
+	return host_map_id(uid, e->uid_map, e->n_uid_map);
+}
+
+static gid_t host_gid_entry(UsernsEntry *e, gid_t gid)
+{
+	return host_map_id(gid, e->gid_map, e->n_gid_map);
+}
+
+static uid_t host_uid(uid_t uid)
+{
+	UsernsEntry *e = &root_userns_entry;
+
+	if (!(root_ns_mask & CLONE_NEWUSER))
+		return uid;
+
+	return host_uid_entry(e, uid);
+}
+
+static gid_t host_gid(gid_t gid)
+{
+	UsernsEntry *e = &root_userns_entry;
+
+	if (!(root_ns_mask & CLONE_NEWUSER))
+		return gid;
+
+	return host_gid_entry(e, gid);
 }
 
 static int parse_id_map(pid_t pid, char *name, UidGidExtent ***pb_exts)
@@ -886,15 +919,13 @@ err:
 
 int collect_user_ns(struct ns_id *ns, void *oarg)
 {
-	/*
-	 * User namespace is dumped before files to get uid and gid
-	 * mappings, which are used for converting local id-s to
-	 * userns id-s (userns_uid(), userns_gid())
-	 */
-	if (dump_user_ns(root_item->pid->real, root_item->ids->user_ns_id))
-		return -1;
+	/* Skip CRIU's own user namespace, there is nothing to dump. */
+	if (ns->type == NS_CRIU)
+		return 0;
 
-	return 0;
+	pr_info("Collecting user namespace %u via %d\n", ns->id, ns->ns_pid);
+
+	return dump_user_ns(ns->ns_pid, ns->id);
 }
 
 int collect_user_namespaces(bool for_dump)
@@ -902,13 +933,10 @@ int collect_user_namespaces(bool for_dump)
 	if (!for_dump)
 		return 0;
 
-	if (!(root_ns_mask & CLONE_NEWUSER))
-		return 0;
-
 	return walk_namespaces(&user_ns_desc, collect_user_ns, NULL);
 }
 
-static int check_user_ns(int pid)
+static int check_user_ns(int pid, UsernsEntry *e)
 {
 	int status;
 	pid_t chld;
@@ -925,8 +953,8 @@ static int check_user_ns(int pid)
 		uid_t uid;
 		gid_t gid;
 
-		uid = host_uid(0);
-		gid = host_gid(0);
+		uid = host_uid_entry(e, 0);
+		gid = host_gid_entry(e, 0);
 		if (uid == INVALID_ID || gid == INVALID_ID) {
 			pr_err("Unable to convert uid or gid\n");
 			exit(1);
@@ -1001,51 +1029,72 @@ static int check_user_ns(int pid)
 	return 0;
 }
 
+static void free_userns_entry(UsernsEntry *e)
+{
+	if (e->uid_map && e->n_uid_map > 0) {
+		xfree(e->uid_map[0]);
+		xfree(e->uid_map);
+	}
+	if (e->gid_map && e->n_gid_map > 0) {
+		xfree(e->gid_map[0]);
+		xfree(e->gid_map);
+	}
+
+	e->uid_map = NULL;
+	e->gid_map = NULL;
+	e->n_uid_map = 0;
+	e->n_gid_map = 0;
+}
+
 int dump_user_ns(pid_t pid, int ns_id)
 {
-	UsernsEntry *e = &userns_entry;
+	UsernsEntry entry = USERNS_ENTRY__INIT;
 	struct cr_img *img;
 	int ret;
 
-	ret = parse_id_map(pid, "uid_map", &e->uid_map);
+	ret = parse_id_map(pid, "uid_map", &entry.uid_map);
 	if (ret < 0)
-		/*
-		 * The uid_map and gid_map is clean up in free_userns_maps
-		 * later, so we don't need to clean these up in error cases.
-		 */
-		return -1;
+		goto err;
 
-	e->n_uid_map = ret;
+	entry.n_uid_map = ret;
 
-	ret = parse_id_map(pid, "gid_map", &e->gid_map);
+	ret = parse_id_map(pid, "gid_map", &entry.gid_map);
 	if (ret < 0)
-		return -1;
-	e->n_gid_map = ret;
+		goto err;
+	entry.n_gid_map = ret;
 
-	if (check_user_ns(pid))
-		return -1;
+	if (root_item->ids && ns_id == root_item->ids->user_ns_id) {
+		if (check_user_ns(pid, &entry))
+			goto err;
+	}
 
 	img = open_image(CR_FD_USERNS, O_DUMP, ns_id);
 	if (!img)
-		return -1;
-	ret = pb_write_one(img, e, PB_USERNS);
+		goto err;
+	ret = pb_write_one(img, &entry, PB_USERNS);
 	close_image(img);
 	if (ret < 0)
-		return -1;
+		goto err;
 
+	if (root_item->ids && ns_id == root_item->ids->user_ns_id) {
+		free_userns_entry(&root_userns_entry);
+		root_userns_entry = entry;
+		entry.uid_map = NULL;
+		entry.gid_map = NULL;
+		entry.n_uid_map = 0;
+		entry.n_gid_map = 0;
+	}
+
+	free_userns_entry(&entry);
 	return 0;
+err:
+	free_userns_entry(&entry);
+	return -1;
 }
 
 void free_userns_maps(void)
 {
-	if (userns_entry.n_uid_map > 0) {
-		xfree(userns_entry.uid_map[0]);
-		xfree(userns_entry.uid_map);
-	}
-	if (userns_entry.n_gid_map > 0) {
-		xfree(userns_entry.gid_map[0]);
-		xfree(userns_entry.gid_map);
-	}
+	free_userns_entry(&root_userns_entry);
 }
 
 static int do_dump_namespaces(struct ns_id *ns)

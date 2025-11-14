@@ -691,7 +691,7 @@ static int collect_remap_dead_process(struct reg_file_info *rfi, RemapFilePathEn
 {
 	struct pstree_item *helper;
 
-	helper = lookup_create_item(rfe->remap_id);
+        helper = lookup_create_item(rfe->remap_id, root_item->pid->ns_id);
 	if (!helper)
 		return -1;
 
@@ -1206,7 +1206,7 @@ int dead_pid_conflict(void)
 		struct pid *node;
 		pid_t pid = dead_pids[i];
 
-		node = pstree_pid_by_virt(pid);
+                node = pstree_pid_by_virt(pid, 0);
 		if (!node)
 			continue;
 

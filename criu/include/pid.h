@@ -22,13 +22,16 @@ enum __criu_task_state {
 };
 
 struct pid {
-	struct pstree_item *item;
-	/*
-	 * The @real pid is used to fetch tasks during dumping stage,
-	 * This is a global pid seen from the context where the dumping
+        struct pstree_item *item;
+        /*
+         * The @real pid is used to fetch tasks during dumping stage,
+         * This is a global pid seen from the context where the dumping
 	 * is running.
 	 */
-	pid_t real;
+        pid_t real;
+
+        /* Identifier of the pid namespace this pid belongs to. */
+        unsigned int ns_id;
 
 	int state; /* TASK_XXX constants */
 	/* If an item is in stopped state it has a signal number

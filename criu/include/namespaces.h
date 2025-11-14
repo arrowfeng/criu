@@ -45,7 +45,7 @@
 	 CLONE_NEWTIME)
 
 /* Nested namespaces are supported only for these types */
-#define CLONE_SUBNS (CLONE_NEWNS | CLONE_NEWNET)
+#define CLONE_SUBNS (CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWPID | CLONE_NEWUSER)
 
 #define EXTRA_SIZE 20
 
