@@ -23,6 +23,63 @@
 struct pstree_item *root_item;
 static struct rb_root pid_root_rb;
 
+static void reset_loaded_pstree(void)
+{
+	struct rb_node *node;
+
+	if (!pid_root_rb.rb_node) {
+		root_item = NULL;
+		return;
+	}
+
+	root_item = NULL;
+
+	for (node = rb_first(&pid_root_rb); node; node = rb_next(node)) {
+		struct pid *pid = rb_entry(node, struct pid, ns[0].node);
+		struct pstree_item *item = pid->item;
+		unsigned int i;
+
+		pid->state = TASK_UNDEF;
+		pid->ns_id = 0;
+		pid->real = -1;
+		pid->stop_signo = -1;
+
+		if (!item)
+			continue;
+
+		if (item->ids) {
+			task_kobj_ids_entry__free_unpacked(item->ids, NULL);
+			item->ids = NULL;
+		}
+
+		if (item->core) {
+			pstree_free_cores(item);
+			item->core = NULL;
+		}
+
+		item->parent = NULL;
+		INIT_LIST_HEAD(&item->children);
+		INIT_LIST_HEAD(&item->sibling);
+		item->pgid = 0;
+		item->sid = 0;
+		item->born_sid = -1;
+
+		if (item->threads) {
+			for (i = 0; i < item->threads_cap; i++) {
+				struct pid *tid = &item->threads[i];
+
+				tid->state = TASK_UNDEF;
+				tid->ns_id = 0;
+				tid->real = -1;
+				tid->stop_signo = -1;
+				tid->item = NULL;
+			}
+		}
+
+		item->nr_threads = 0;
+	}
+}
+
 void core_entry_free(CoreEntry *core)
 {
 	if (core->tc && core->tc->timers)
@@ -222,12 +279,15 @@ struct pstree_item *__alloc_pstree_item(bool rst)
 	INIT_LIST_HEAD(&item->children);
 	INIT_LIST_HEAD(&item->sibling);
 
-        item->pid->ns[0].virt = -1;
-        item->pid->real = -1;
-        item->pid->ns_id = 0;
-        item->pid->state = TASK_UNDEF;
+	item->pid->ns[0].virt = -1;
+	item->pid->real = -1;
+	item->pid->ns_id = 0;
+	item->pid->state = TASK_UNDEF;
 	item->pid->stop_signo = -1;
 	item->born_sid = -1;
+	item->threads = NULL;
+	item->nr_threads = 0;
+	item->threads_cap = 0;
 	item->pid->item = item;
 	futex_init(&item->task_st);
 
@@ -679,9 +739,15 @@ static int read_one_pstree_item(struct cr_img *img, pid_t *pid_max)
        }
 
 	pi->nr_threads = e->n_threads;
-	pi->threads = xmalloc(e->n_threads * sizeof(struct pid));
-	if (!pi->threads)
+	if (!pi->threads) {
+		pi->threads = xmalloc(e->n_threads * sizeof(struct pid));
+		if (!pi->threads)
+			goto err_ids;
+		pi->threads_cap = e->n_threads;
+	} else if (pi->threads_cap < e->n_threads) {
+		pr_err("Can't reuse thread array for %d\n", e->pid);
 		goto err_ids;
+	}
 
 	for (i = 0; i < e->n_threads; i++) {
 		struct pid *node;
@@ -691,6 +757,7 @@ static int read_one_pstree_item(struct cr_img *img, pid_t *pid_max)
 		pi->threads[i].state = TASK_THREAD;
 		pi->threads[i].item = NULL;
 		pi->threads[i].ns_id = ns_id;
+		pi->threads[i].stop_signo = -1;
 		if (i == 0)
 			continue; /* A thread leader is in a tree already */
 		node = lookup_create_pid(pi->threads[i].ns[0].virt, ns_id, &pi->threads[i]);
@@ -722,6 +789,8 @@ static int read_pstree_image(pid_t *pid_max)
 {
 	struct cr_img *img;
 	int ret;
+
+	reset_loaded_pstree();
 
 	pr_info("Reading image tree\n");
 
@@ -1021,7 +1090,7 @@ static int prepare_pstree_kobj_ids(void)
                 if (cflags & CLONE_NEWPID) {
                         if (vpid(item) != INIT_PID) {
                                 pr_err("Task %d must become pid namespace init (pid 1)\n", vpid(item));
-                                return -1;
+                		return -1;
                         }
                 } else {
                         rsti(item)->clone_flags &= ~CLONE_NEWPID;

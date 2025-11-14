@@ -886,9 +886,10 @@ static int collect_threads(struct pstree_item *item)
 	/* The number of threads can't be less than already frozen */
 	tmp = xrealloc(item->threads, nr_threads * sizeof(struct pid));
 	if (tmp == NULL)
-		goto err;
+                goto err;
 
 	item->threads = tmp;
+	item->threads_cap = nr_threads;
 
 	if (item->nr_threads == 0) {
 		item->threads[0].real = item->pid->real;

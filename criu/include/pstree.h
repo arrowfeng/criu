@@ -23,6 +23,7 @@ struct pstree_item {
 	pid_t born_sid;
 
 	int nr_threads;	     /* number of threads */
+	int threads_cap;	     /* allocated thread slots */
 	struct pid *threads; /* array of threads */
 	CoreEntry **core;
 	TaskKobjIdsEntry *ids;
