@@ -39,10 +39,9 @@ static void reset_loaded_pstree(void)
 		struct pstree_item *item = pid->item;
 		unsigned int i;
 
-		pid->state = TASK_UNDEF;
-		pid->ns_id = 0;
-		pid->real = -1;
-		pid->stop_signo = -1;
+                pid->state = TASK_UNDEF;
+                pid->real = -1;
+                pid->stop_signo = -1;
 
 		if (!item)
 			continue;
@@ -68,10 +67,9 @@ static void reset_loaded_pstree(void)
 			for (i = 0; i < item->threads_cap; i++) {
 				struct pid *tid = &item->threads[i];
 
-				tid->state = TASK_UNDEF;
-				tid->ns_id = 0;
-				tid->real = -1;
-				tid->stop_signo = -1;
+                                tid->state = TASK_UNDEF;
+                                tid->real = -1;
+                                tid->stop_signo = -1;
 				tid->item = NULL;
 			}
 		}
